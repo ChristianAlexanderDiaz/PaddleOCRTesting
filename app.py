@@ -8,18 +8,21 @@ import base64
 
 app = Flask(__name__)
 
-# Initialize PaddleOCR once (lightweight models for memory efficiency)
-print("Initializing PaddleOCR...")
+# ULTRA-LIGHTWEIGHT VERSION - Uses mobile models
 ocr = PaddleOCR(
-    use_angle_cls=False,  # Disable angle classification to save memory
-    lang='en',  # Use English model (smaller than multilingual)
-    use_gpu=False,  # CPU only for Railway
-    det_model_dir=None,  # Use default lightweight models
-    rec_model_dir=None,
-    cls_model_dir=None,
-    show_log=False,
+    det_model_dir='https://paddleocr.bj.bcebos.com/PP-OCRv3/english/en_PP-OCRv3_det_slim_infer.tar',
+    rec_model_dir='https://paddleocr.bj.bcebos.com/PP-OCRv3/english/en_PP-OCRv3_rec_slim_infer.tar',
+    use_angle_cls=False,  # Disable angle classification
+    lang='en',
+    use_gpu=False,
+    det_db_thresh=0.3,
+    det_db_box_thresh=0.6,
+    det_db_unclip_ratio=1.5,
+    max_text_length=25,
+    rec_batch_num=6,  # Lower batch size
+    drop_score=0.5,
     use_space_char=True,
-    drop_score=0.5  # Filter low confidence results
+    show_log=False
 )
 print("PaddleOCR initialized!")
 
