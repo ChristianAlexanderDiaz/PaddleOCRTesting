@@ -1,0 +1,5 @@
+paddlepaddle==2.6.0
+paddleocr==2.7.3
+flask==3.0.0
+pillow==10.2.0
+numpy<2.0.0
