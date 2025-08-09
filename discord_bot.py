@@ -78,12 +78,49 @@ async def download_image(url: str) -> str:
                 os.close(temp_fd)
                 raise
 
+def crop_image_to_target_region(image_path: str) -> str:
+    """Crop image to target region - width stays same, height extends to bottom"""
+    try:
+        # Load image
+        image = Image.open(image_path)
+        img_width, img_height = image.size
+        
+        # Fixed coordinates (width is always 1720, height varies)
+        start_x = 576
+        start_y = 100
+        end_x = 1068
+        end_y = img_height  # Extend to full height of current image
+        
+        # Ensure coordinates are within bounds
+        start_x = max(0, min(start_x, img_width))
+        start_y = max(0, min(start_y, img_height))
+        end_x = max(0, min(end_x, img_width))
+        end_y = max(0, min(end_y, img_height))
+        
+        # Crop the image
+        cropped_image = image.crop((start_x, start_y, end_x, end_y))
+        
+        # Save cropped image
+        cropped_path = image_path.replace('.png', '_cropped.png').replace('.jpg', '_cropped.jpg').replace('.jpeg', '_cropped.jpg')
+        cropped_image.save(cropped_path)
+        
+        print(f"Cropped image {img_width}x{img_height} to region ({start_x},{start_y}) to ({end_x},{end_y})")
+        
+        return cropped_path
+        
+    except Exception as e:
+        print(f"Error cropping image: {e}")
+        return image_path  # Return original if cropping fails
+
 def perform_ocr_on_file(image_path: str) -> dict:
     """Perform OCR on image file and return results"""
     try:
+        # First crop the image to target region
+        cropped_path = crop_image_to_target_region(image_path)
+        
         with ocr_lock:
-            # Perform OCR
-            result = ocr.ocr(image_path, cls=False)
+            # Perform OCR on cropped image
+            result = ocr.ocr(cropped_path, cls=False)
             
             # Format results
             text_results = []
@@ -101,6 +138,13 @@ def perform_ocr_on_file(image_path: str) -> dict:
                 "results": text_results,
                 "text": " ".join([r["text"] for r in text_results])
             }
+            
+            # Clean up cropped image if it was created
+            if cropped_path != image_path:
+                try:
+                    os.unlink(cropped_path)
+                except:
+                    pass
             
             # Clean up
             del result
