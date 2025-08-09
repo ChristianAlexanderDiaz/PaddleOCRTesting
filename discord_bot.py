@@ -45,7 +45,7 @@ def cleanup_memory():
 class OCRBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.message_content = True
+        # Don't require message_content intent - we'll use interaction attachments instead
         super().__init__(command_prefix='!', intents=intents)
 
     async def setup_hook(self):
@@ -135,18 +135,28 @@ async def find_recent_image(interaction: discord.Interaction, limit: int = 50):
         print(f"Error finding recent image: {e}")
         return None, None
 
-@bot.tree.command(name='runocr', description='Run OCR on the most recent image in this channel')
-async def runocr(interaction: discord.Interaction):
-    """Run OCR on the most recent image in the channel"""
+@bot.tree.command(name='runocr', description='Run OCR on an attached image or the most recent image in this channel')
+@app_commands.describe(image='Optional: Upload an image to run OCR on')
+async def runocr(interaction: discord.Interaction, image: discord.Attachment = None):
+    """Run OCR on an attached image or the most recent image in the channel"""
     await interaction.response.defer(thinking=True)
     
     try:
-        # Find recent image
-        image_url, image_source = await find_recent_image(interaction)
-        
-        if not image_url:
-            await interaction.followup.send("❌ No recent images found in this channel (checked last 50 messages)")
-            return
+        # Use attached image first, then fall back to recent images
+        if image:
+            # Check if it's an image
+            if not any(image.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
+                await interaction.followup.send("❌ Please upload an image file (PNG, JPG, JPEG, GIF, or WebP)")
+                return
+            image_url = image.url
+            image_source = f"attachment: {image.filename}"
+        else:
+            # Find recent image
+            image_url, image_source = await find_recent_image(interaction)
+            
+            if not image_url:
+                await interaction.followup.send("❌ No recent images found in this channel (checked last 50 messages). Try uploading an image with the command!")
+                return
         
         # Download image
         try:
