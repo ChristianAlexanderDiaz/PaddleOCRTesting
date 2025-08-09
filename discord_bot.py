@@ -18,22 +18,34 @@ load_dotenv()
 # Thread lock for OCR operations
 ocr_lock = threading.Lock()
 
-# Ultra-light initialization (sacrifices some accuracy for stability)
+# # Ultra-light initialization (sacrifices some accuracy for stability)
+# ocr = PaddleOCR(
+#     det_model_name='en_PP-OCRv3_det_slim',  # Slim detection model
+#     rec_model_name='en_PP-OCRv3_rec_slim',  # Slim recognition model
+#     use_angle_cls=False,
+#     lang='en',
+#     use_gpu=False,
+#     show_log=False,
+#     det_db_thresh=0.3,
+#     det_db_box_thresh=0.6,
+#     max_text_length=25,
+#     rec_batch_num=1,
+#     cpu_threads=1,
+#     enable_mkldnn=False,  # Disable MKL-DNN to save memory
+#     det_limit_side_len=640,  # Smaller image processing
+#     rec_image_shape="3, 32, 320"  # Even smaller recognition
+# )
+
 ocr = PaddleOCR(
-    det_model_name='en_PP-OCRv3_det_slim',  # Slim detection model
-    rec_model_name='en_PP-OCRv3_rec_slim',  # Slim recognition model
-    use_angle_cls=False,
-    lang='en',
-    use_gpu=False,
+    use_angle_cls=False,  # Disable angle classification to save memory
+    lang='en',  # Use English model (smaller than multilingual)
+    use_gpu=False,  # CPU only for Railway
+    det_model_dir=None,  # Use default lightweight models
+    rec_model_dir=None,
+    cls_model_dir=None,
     show_log=False,
-    det_db_thresh=0.3,
-    det_db_box_thresh=0.6,
-    max_text_length=25,
-    rec_batch_num=1,
-    cpu_threads=1,
-    enable_mkldnn=False,  # Disable MKL-DNN to save memory
-    det_limit_side_len=640,  # Smaller image processing
-    rec_image_shape="3, 32, 320"  # Even smaller recognition
+    use_space_char=True,
+    drop_score=0.5  # Filter low confidence results
 )
 
 print("PaddleOCR initialized!")
