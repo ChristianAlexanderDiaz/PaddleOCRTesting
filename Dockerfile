@@ -20,8 +20,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY . .
 
-# Expose port for web service
-EXPOSE 8080
-
-# Run the app
-CMD ["python", "app.py"]
+# Run the Discord bot
+CMD ["python", "discord_bot.py"]
