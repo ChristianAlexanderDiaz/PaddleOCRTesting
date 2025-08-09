@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from paddleocr import PaddleOCR
-from PIL import Image
+from PIL import Image, ImageDraw
 import traceback
 
 # Load environment variables
@@ -78,8 +78,8 @@ async def download_image(url: str) -> str:
                 os.close(temp_fd)
                 raise
 
-def crop_image_to_target_region(image_path: str) -> str:
-    """Crop image to target region - width stays same, height extends to bottom"""
+def crop_image_to_target_region(image_path: str) -> tuple[str, str, tuple]:
+    """Crop image to target region and create visualization - returns (cropped_path, visual_path, crop_coords)"""
     try:
         # Load image
         image = Image.open(image_path)
@@ -97,26 +97,42 @@ def crop_image_to_target_region(image_path: str) -> str:
         end_x = max(0, min(end_x, img_width))
         end_y = max(0, min(end_y, img_height))
         
-        # Crop the image
-        cropped_image = image.crop((start_x, start_y, end_x, end_y))
+        crop_coords = (start_x, start_y, end_x, end_y)
         
-        # Save cropped image
+        # Crop the image
+        cropped_image = image.crop(crop_coords)
+        
+        # Create visualization showing the crop region on original image
+        visual_image = image.copy()
+        draw = ImageDraw.Draw(visual_image)
+        
+        # Draw rectangle showing crop region
+        draw.rectangle(crop_coords, outline="red", width=8)
+        
+        # Add text labels
+        draw.text((start_x + 10, start_y + 10), "OCR REGION", fill="red")
+        draw.text((start_x + 10, start_y + 40), f"{end_x - start_x}x{end_y - start_y}px", fill="red")
+        
+        # Save both images
         cropped_path = image_path.replace('.png', '_cropped.png').replace('.jpg', '_cropped.jpg').replace('.jpeg', '_cropped.jpg')
+        visual_path = image_path.replace('.png', '_visual.png').replace('.jpg', '_visual.jpg').replace('.jpeg', '_visual.jpg')
+        
         cropped_image.save(cropped_path)
+        visual_image.save(visual_path)
         
         print(f"Cropped image {img_width}x{img_height} to region ({start_x},{start_y}) to ({end_x},{end_y})")
         
-        return cropped_path
+        return cropped_path, visual_path, crop_coords
         
     except Exception as e:
         print(f"Error cropping image: {e}")
-        return image_path  # Return original if cropping fails
+        return image_path, image_path, (0, 0, 0, 0)  # Return original if cropping fails
 
 def perform_ocr_on_file(image_path: str) -> dict:
-    """Perform OCR on image file and return results"""
+    """Perform OCR on image file and return results with visualization paths"""
     try:
-        # First crop the image to target region
-        cropped_path = crop_image_to_target_region(image_path)
+        # First crop the image to target region and create visualization
+        cropped_path, visual_path, crop_coords = crop_image_to_target_region(image_path)
         
         with ocr_lock:
             # Perform OCR on cropped image
@@ -136,15 +152,11 @@ def perform_ocr_on_file(image_path: str) -> dict:
             response = {
                 "success": True,
                 "results": text_results,
-                "text": " ".join([r["text"] for r in text_results])
+                "text": " ".join([r["text"] for r in text_results]),
+                "cropped_path": cropped_path,
+                "visual_path": visual_path,
+                "crop_coords": crop_coords
             }
-            
-            # Clean up cropped image if it was created
-            if cropped_path != image_path:
-                try:
-                    os.unlink(cropped_path)
-                except:
-                    pass
             
             # Clean up
             del result
@@ -226,17 +238,26 @@ async def runocr(interaction: discord.Interaction, image: discord.Attachment = N
             embed = discord.Embed(
                 title="🔍 OCR Results",
                 color=0x00ff00,
-                description=f"**Source:** {image_source}\n**Detected Text:**"
+                description=f"**Source:** {image_source}"
             )
+            
+            # Add crop region info
+            if "crop_coords" in ocr_result:
+                x1, y1, x2, y2 = ocr_result["crop_coords"]
+                embed.add_field(
+                    name="📐 Crop Region",
+                    value=f"X: {x1} to {x2}\nY: {y1} to {y2}\nSize: {x2-x1}×{y2-y1}px",
+                    inline=True
+                )
             
             # Truncate text if too long for Discord
             text_content = ocr_result["text"]
-            if len(text_content) > 4000:
-                text_content = text_content[:4000] + "...\n*(text truncated)*"
+            if len(text_content) > 3500:
+                text_content = text_content[:3500] + "...\n*(text truncated)*"
             
             embed.add_field(
                 name="📝 Extracted Text",
-                value=f"```\n{text_content}\n```",
+                value=f"```\n{text_content}\n```" if text_content else "*(No text detected)*",
                 inline=False
             )
             
@@ -249,14 +270,48 @@ async def runocr(interaction: discord.Interaction, image: discord.Attachment = N
                     inline=True
                 )
             
-            await interaction.followup.send(embed=embed)
+            # Prepare files to send
+            files_to_send = []
+            
+            # Add visualization image (original with crop region highlighted)
+            if "visual_path" in ocr_result and ocr_result["visual_path"] != temp_path:
+                try:
+                    visual_file = discord.File(ocr_result["visual_path"], filename="crop_region_visual.png")
+                    files_to_send.append(visual_file)
+                    embed.set_image(url="attachment://crop_region_visual.png")
+                except:
+                    pass
+            
+            # Add cropped image
+            if "cropped_path" in ocr_result and ocr_result["cropped_path"] != temp_path:
+                try:
+                    cropped_file = discord.File(ocr_result["cropped_path"], filename="cropped_for_ocr.png")
+                    files_to_send.append(cropped_file)
+                    embed.set_thumbnail(url="attachment://cropped_for_ocr.png")
+                except:
+                    pass
+            
+            # Send response with embed and files
+            if files_to_send:
+                await interaction.followup.send(embed=embed, files=files_to_send)
+            else:
+                await interaction.followup.send(embed=embed)
             
         finally:
-            # Clean up temporary file
+            # Clean up temporary files
             try:
                 os.unlink(temp_path)
             except:
                 pass
+            
+            # Clean up visualization files if they were created
+            if 'ocr_result' in locals() and isinstance(ocr_result, dict):
+                for path_key in ['cropped_path', 'visual_path']:
+                    if path_key in ocr_result and ocr_result[path_key] != temp_path:
+                        try:
+                            os.unlink(ocr_result[path_key])
+                        except:
+                            pass
                 
     except Exception as e:
         print(f"Error in runocr command: {e}")
